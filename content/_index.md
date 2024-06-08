@@ -6,4 +6,4 @@ draft: false
 
 # Nic Hoffs
 
-Mostly deep learning stuff.
+_Mostly_ deep learning stuff.
