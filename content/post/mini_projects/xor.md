@@ -129,3 +129,5 @@ plt.show()
 ```
 
 ![boundary](/boundary.png)
+
+P.S. the decision boundary lines are squiggly because I upscaled it. They're straight.
