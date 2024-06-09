@@ -6,14 +6,14 @@
     <description>Recent content in Home on Nic Hoffs Blog</description>
     <generator>Hugo</generator>
     <language>en-us</language>
-    <lastBuildDate>Sat, 08 Jun 2024 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Sun, 09 Jun 2024 13:17:27 +0200</lastBuildDate>
     <atom:link href="http://localhost:1313/index.xml" rel="self" type="application/rss+xml" />
     <item>
-      <title>Teaching a GPT Modular Addition</title>
-      <link>http://localhost:1313/post/grokking_squared/part1/</link>
-      <pubDate>Sat, 08 Jun 2024 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/post/grokking_squared/part1/</guid>
-      <description>In this</description>
+      <title>Learning PySr for Symbolic Regression</title>
+      <link>http://localhost:1313/post/symbolic_regression/learning_pysr/</link>
+      <pubDate>Sun, 09 Jun 2024 13:17:27 +0200</pubDate>
+      <guid>http://localhost:1313/post/symbolic_regression/learning_pysr/</guid>
+      <description>What is PySr? A library for symbolic regression made by one of my favorite researchers, Miles Cranmer. The backend genetic algorithm(optimization method for finding symbolic expression) runs on Julia, so it&amp;rsquo;s really fast. It&amp;rsquo;s also extremely flexible.&#xA;Running PySr I&amp;rsquo;m going to use a Jupyter notebook for all my PySr experiments.</description>
     </item>
     <item>
       <title>XOR</title>
@@ -21,6 +21,13 @@
       <pubDate>Sat, 08 Jun 2024 00:00:00 +0000</pubDate>
       <guid>http://localhost:1313/post/mini_projects/xor/</guid>
       <description>The tiniest project &amp;ndash; teaching a neural net to XOR. Obviously, I&amp;rsquo;m doing this in tinygrad because it&amp;rsquo;s tiny.&#xA;A B A XOR B 0 0 0 0 1 1 1 0 1 1 1 0 First, imports.&#xA;from tinygrad import Tensor, TinyJit from tinygrad.nn.optim import SGD import numpy as np from tqdm import tqdm, trange import matplotlib.pyplot as plt Next, dataset. It&amp;rsquo;s the same as the truth table.&#xA;x = Tensor([[0,0],[0,1],[1,0],[1,1]]) y = Tensor([[0],[1],[1],[0]]) x.</description>
+    </item>
+    <item>
+      <title>Teaching a GPT to do Modular Addition</title>
+      <link>http://localhost:1313/post/grokking_squared/part1/</link>
+      <pubDate>Sun, 26 May 2024 21:07:39 +0200</pubDate>
+      <guid>http://localhost:1313/post/grokking_squared/part1/</guid>
+      <description>Prerequisite Terminology Grok (verb) - To grok means to fully and intuitively understand. When you finally grok something, it&amp;rsquo;s an Aha moment where all the lingering questions you&amp;rsquo;ve had are suddenly resolved. For the purposes of this article, I don&amp;rsquo;t need to go any deeper than that. Everybody knows that feeling.&#xA;Mechanistic Interpretability (noun) - A sub-field of deep learning studying the algorithms learned by neural-net-based architectures. It was popularized (and coined?</description>
     </item>
     <item>
       <title>About</title>

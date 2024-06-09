@@ -6,14 +6,14 @@
     <description>Recent content in Grokking Squared on Nic Hoffs Blog</description>
     <generator>Hugo</generator>
     <language>en-us</language>
-    <lastBuildDate>Sat, 08 Jun 2024 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Sun, 26 May 2024 21:07:39 +0200</lastBuildDate>
     <atom:link href="http://localhost:1313/post/grokking_squared/index.xml" rel="self" type="application/rss+xml" />
     <item>
-      <title>Teaching a GPT Modular Addition</title>
+      <title>Teaching a GPT to do Modular Addition</title>
       <link>http://localhost:1313/post/grokking_squared/part1/</link>
-      <pubDate>Sat, 08 Jun 2024 00:00:00 +0000</pubDate>
+      <pubDate>Sun, 26 May 2024 21:07:39 +0200</pubDate>
       <guid>http://localhost:1313/post/grokking_squared/part1/</guid>
-      <description>In this</description>
+      <description>Prerequisite Terminology Grok (verb) - To grok means to fully and intuitively understand. When you finally grok something, it&amp;rsquo;s an Aha moment where all the lingering questions you&amp;rsquo;ve had are suddenly resolved. For the purposes of this article, I don&amp;rsquo;t need to go any deeper than that. Everybody knows that feeling.&#xA;Mechanistic Interpretability (noun) - A sub-field of deep learning studying the algorithms learned by neural-net-based architectures. It was popularized (and coined?</description>
     </item>
   </channel>
 </rss>

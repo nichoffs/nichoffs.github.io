@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Symbolic Regression on Nic Hoffs Blog</title>
+    <link>http://localhost:1313/post/symbolic_regression/</link>
+    <description>Recent content in Symbolic Regression on Nic Hoffs Blog</description>
+    <generator>Hugo</generator>
+    <language>en-us</language>
+    <lastBuildDate>Sun, 09 Jun 2024 13:17:27 +0200</lastBuildDate>
+    <atom:link href="http://localhost:1313/post/symbolic_regression/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Learning PySr for Symbolic Regression</title>
+      <link>http://localhost:1313/post/symbolic_regression/learning_pysr/</link>
+      <pubDate>Sun, 09 Jun 2024 13:17:27 +0200</pubDate>
+      <guid>http://localhost:1313/post/symbolic_regression/learning_pysr/</guid>
+      <description>What is PySr? A library for symbolic regression made by one of my favorite researchers, Miles Cranmer. The backend genetic algorithm(optimization method for finding symbolic expression) runs on Julia, so it&amp;rsquo;s really fast. It&amp;rsquo;s also extremely flexible.&#xA;Running PySr I&amp;rsquo;m going to use a Jupyter notebook for all my PySr experiments.</description>
+    </item>
+  </channel>
+</rss>

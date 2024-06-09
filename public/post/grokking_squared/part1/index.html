@@ -3,7 +3,7 @@
   <head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Teaching a GPT Modular Addition | Nic Hoffs Blog</title>
+    <title>Teaching a GPT to do Modular Addition | Nic Hoffs Blog</title>
     <link rel="stylesheet" href="/css/style.css" />
     <link rel="stylesheet" href="/css/fonts.css" />
     
@@ -24,13 +24,283 @@
     </nav>
 
 <div class="article-meta">
-<h1><span class="title">Teaching a GPT Modular Addition</span></h1>
+<h1><span class="title">Teaching a GPT to do Modular Addition</span></h1>
 
-<h2 class="date">2024/06/08</h2>
+<h2 class="date">2024/05/26</h2>
 </div>
 
 <main>
-<p>In this</p>
+<h1 id="prerequisite-terminology">Prerequisite Terminology</h1>
+<ul>
+<li>
+<p><strong>Grok (verb)</strong> - To grok means to fully and intuitively understand. When you finally grok something, it&rsquo;s an Aha moment where all the lingering questions you&rsquo;ve had are suddenly resolved. For the purposes of this article, I don&rsquo;t need to go any deeper than that. Everybody knows that feeling.</p>
+</li>
+<li>
+<p><strong>Mechanistic Interpretability (noun)</strong> - A sub-field of deep learning studying the algorithms learned by neural-net-based architectures. It was popularized (and coined?) by researchers at Anthropic in their <a href="https://transformer-circuits.pub">Transformers Circuit Thread</a>.</p>
+</li>
+<li>
+<p><strong>Progress Measures</strong> - Metrics that provide information about the state of training inside the model. See 1 in credits.</p>
+</li>
+<li>
+<p><strong>GPT</strong> - Generatively Pre-trained Transformer - you should know how these work before reading.</p>
+</li>
+</ul>
+<h1 id="what-is-grokking-mechanstically">What is grokking (mechanstically)?</h1>
+<p>Researchers in the field of mechanistic interpretability have adopted the term &ldquo;grokking&rdquo; to refer to a unique training behavior observed in neural networks. Grokking describes the phenomenon of &ldquo;delayed generalization,&rdquo; where a model initially overfits the training data, reaching zero training loss, before eventually developing a more general solution to the task that significantly reduces test loss.</p>
+<p>This grokking behavior is most apparent when the model has excess capacity relative to the dataset and can trivially memorize the training examples to achieve zero train loss. To encourage the model to find a general solution, the effective size of the model is gradually reduced over the course of training through the use of substantial weight decay.</p>
+<h1 id="reproducing-grokking-in-a-toy-setting">Reproducing grokking in a toy setting</h1>
+<p>Let&rsquo;s set up a simple training scenario to demonstrate grokking in action, heavily inspired by the setup used in the paper <a href="https://arxiv.org/pdf/2301.05217">Progress Measures for Grokking via Mechanistic Interpretability</a>.
+This first part of the grokking series will pretty much focus on reproducing the results from the original paper, so credit to the original authors.</p>
+<p>We&rsquo;ll train a bare-bones GPT model on the task of modular addition. The transformer will take as input two integers and an equals token, and produce as output a final logit corresponding to the result of adding the integers modulo some value.</p>
+<h2 id="modular-addition">Modular Addition</h2>
+<p>Modular addition is a fundamental arithmetic operation where you add two integers and then take the remainder when divided by a given modulus. In more formal terms, given two integers <code>a</code> and <code>b</code> and a modulus <code>n</code>, the modular addition of <code>a</code> and <code>b</code> is:</p>
+<p><code>(a + b) mod n</code></p>
+<p>For instance, if <code>a = 5</code>, <code>b = 3</code>, and <code>n = 4</code>, then:</p>
+<p><code>(5 + 3) mod 4 = 8 mod 4 = 0</code></p>
+<p>This means that when you add 5 and 3 and then divide the sum by 4, the remainder is 0.</p>
+<h3 id="dataset-creation">Dataset Creation</h3>
+<p>For our toy dataset, the input integers will range from 0 to 112, with a modulus of 113. Using 113 as the modulus, a prime number, guarantees that every possible modular sum of two integers in our range is unique and won&rsquo;t repeat. This property simplifies the learning problem for the model by avoiding duplicate sums.</p>
+<p>Recall that each sample input will have three values: the first operand, the second operand, and the equals token. Since we have every possible pair from 0-112, there will be 113^2, or 12,769, total training samples. As a result, the full feature dataset will have shape <code>(12769, 3)</code> and the output will have shape <code>(12769, 1)</code>.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> tinygrad <span style="color:#f92672">import</span> Tensor
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">make_dataset</span>(train_test_ratio<span style="color:#f92672">=</span><span style="color:#ae81ff">0.3</span>, mod<span style="color:#f92672">=</span><span style="color:#ae81ff">113</span>):
+</span></span><span style="display:flex;"><span>    ds_len <span style="color:#f92672">=</span> mod <span style="color:#f92672">*</span> mod
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># each have shape 12769=mod*mod</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># [ [0,1,2,..,mod,0,1,2,...mod] ] mod times</span>
+</span></span><span style="display:flex;"><span>    a <span style="color:#f92672">=</span> (
+</span></span><span style="display:flex;"><span>        Tensor<span style="color:#f92672">.</span>arange(mod, dtype<span style="color:#f92672">=</span>dtypes<span style="color:#f92672">.</span>int)
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">.</span>repeat((mod, <span style="color:#ae81ff">1</span>))
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">.</span>flatten(<span style="color:#ae81ff">0</span>, <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">.</span>unsqueeze(<span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>    )
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># [ [0,0,0,...,1,1,1,...,112,112,112] ]</span>
+</span></span><span style="display:flex;"><span>    b <span style="color:#f92672">=</span> (
+</span></span><span style="display:flex;"><span>        Tensor<span style="color:#f92672">.</span>arange(mod, dtype<span style="color:#f92672">=</span>dtypes<span style="color:#f92672">.</span>int)
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">.</span>unsqueeze(<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">.</span>repeat((<span style="color:#ae81ff">1</span>, mod))
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">.</span>flatten(<span style="color:#ae81ff">0</span>, <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">.</span>unsqueeze(<span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>    )
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># [ [113, 113, 113,...,113, 113] ]</span>
+</span></span><span style="display:flex;"><span>    equals <span style="color:#f92672">=</span> Tensor<span style="color:#f92672">.</span>full((ds_len), mod)<span style="color:#f92672">.</span>unsqueeze(<span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>    sum <span style="color:#f92672">=</span> a <span style="color:#f92672">+</span> b
+</span></span><span style="display:flex;"><span>    products <span style="color:#f92672">=</span> sum<span style="color:#f92672">.</span>div(mod)<span style="color:#f92672">.</span>floor() <span style="color:#f92672">*</span> mod
+</span></span><span style="display:flex;"><span>    targets <span style="color:#f92672">=</span> sum <span style="color:#f92672">-</span> products
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    ds <span style="color:#f92672">=</span> a<span style="color:#f92672">.</span>cat(b, equals, dim<span style="color:#f92672">=</span><span style="color:#ae81ff">0</span>)<span style="color:#f92672">.</span>T
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    indices <span style="color:#f92672">=</span> Tensor<span style="color:#f92672">.</span>randint(
+</span></span><span style="display:flex;"><span>        ds_len,
+</span></span><span style="display:flex;"><span>        low<span style="color:#f92672">=</span><span style="color:#ae81ff">0</span>,
+</span></span><span style="display:flex;"><span>        high<span style="color:#f92672">=</span>ds_len,
+</span></span><span style="display:flex;"><span>    )
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    ds_shuffled <span style="color:#f92672">=</span> ds[indices]<span style="color:#f92672">.</span>cast(dtypes<span style="color:#f92672">.</span>float)
+</span></span><span style="display:flex;"><span>    targets_shuffled <span style="color:#f92672">=</span> (
+</span></span><span style="display:flex;"><span>        targets[:, indices]<span style="color:#f92672">.</span>cast(dtypes<span style="color:#f92672">.</span>float)<span style="color:#f92672">.</span>reshape(prod(targets<span style="color:#f92672">.</span>shape), <span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>    )
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> train_test_ratio <span style="color:#f92672">==</span> <span style="color:#66d9ef">None</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> ds_shuffled, targets_shuffled
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    train_cutoff <span style="color:#f92672">=</span> int(train_test_ratio <span style="color:#f92672">*</span> ds_len)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> (
+</span></span><span style="display:flex;"><span>        ds_shuffled[:train_cutoff],
+</span></span><span style="display:flex;"><span>        targets_shuffled[:train_cutoff],
+</span></span><span style="display:flex;"><span>        ds_shuffled[train_cutoff:],
+</span></span><span style="display:flex;"><span>        targets_shuffled[train_cutoff:],
+</span></span><span style="display:flex;"><span>    )
+</span></span></code></pre></div><h2 id="gpt-model-breakdown">GPT Model Breakdown</h2>
+<p>The GPT we&rsquo;ll use here is barebones, much simpler than the even the venerable GPT-2. <a href="https://arxiv.org/pdf/2301.02679">Previous work</a> has shown grokking on modular arithmetic tasks even with basic two-layer MLPs, so our model will certainly have more than enough capacity. Using a larger and more complex model would only make analysis more challenging, which is our primary objective.</p>
+<p>Our GPT will be one transformer block, no bias, no layernorm. Now gaze in awe at this clean implementation.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">TransformerBlock</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> __init__(self, embed_dim, head_dim, num_heads):
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>embed_dim <span style="color:#f92672">=</span> embed_dim
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>head_dim <span style="color:#f92672">=</span> head_dim
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>num_heads <span style="color:#f92672">=</span> num_heads
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>q <span style="color:#f92672">=</span> Tensor<span style="color:#f92672">.</span>normal(embed_dim, embed_dim)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>k <span style="color:#f92672">=</span> Tensor<span style="color:#f92672">.</span>normal(embed_dim, embed_dim)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>v <span style="color:#f92672">=</span> Tensor<span style="color:#f92672">.</span>normal(embed_dim, embed_dim)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>head_out <span style="color:#f92672">=</span> Tensor<span style="color:#f92672">.</span>normal(num_heads <span style="color:#f92672">*</span> head_dim, embed_dim)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>ff1 <span style="color:#f92672">=</span> Tensor<span style="color:#f92672">.</span>normal(embed_dim, <span style="color:#ae81ff">4</span> <span style="color:#f92672">*</span> embed_dim)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>ff2 <span style="color:#f92672">=</span> Tensor<span style="color:#f92672">.</span>normal(<span style="color:#ae81ff">4</span> <span style="color:#f92672">*</span> embed_dim, embed_dim)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">attn</span>(self, x):
+</span></span><span style="display:flex;"><span>        bsz <span style="color:#f92672">=</span> x<span style="color:#f92672">.</span>shape[<span style="color:#ae81ff">0</span>]
+</span></span><span style="display:flex;"><span>        q, k, v <span style="color:#f92672">=</span> [
+</span></span><span style="display:flex;"><span>            x<span style="color:#f92672">.</span>linear(proj)
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">.</span>reshape(bsz, <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>, self<span style="color:#f92672">.</span>num_heads, self<span style="color:#f92672">.</span>head_dim)
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">.</span>transpose(<span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">2</span>)
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">for</span> proj <span style="color:#f92672">in</span> (self<span style="color:#f92672">.</span>q, self<span style="color:#f92672">.</span>k, self<span style="color:#f92672">.</span>v)
+</span></span><span style="display:flex;"><span>        ]
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> (
+</span></span><span style="display:flex;"><span>            q<span style="color:#f92672">.</span>scaled_dot_product_attention(k, v)
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">.</span>transpose(<span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">2</span>)
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">.</span>reshape(bsz, <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>, self<span style="color:#f92672">.</span>num_heads <span style="color:#f92672">*</span> self<span style="color:#f92672">.</span>head_dim)
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">.</span>linear(self<span style="color:#f92672">.</span>head_out)
+</span></span><span style="display:flex;"><span>        )
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">mlp</span>(self, x):
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> x<span style="color:#f92672">.</span>linear(self<span style="color:#f92672">.</span>ff1)<span style="color:#f92672">.</span>relu()<span style="color:#f92672">.</span>linear(self<span style="color:#f92672">.</span>ff2)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> __call__(self, x):
+</span></span><span style="display:flex;"><span>        x <span style="color:#f92672">=</span> x <span style="color:#f92672">+</span> self<span style="color:#f92672">.</span>attn(x)
+</span></span><span style="display:flex;"><span>        x <span style="color:#f92672">=</span> x <span style="color:#f92672">+</span> self<span style="color:#f92672">.</span>mlp(x)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> x
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">GPT</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> __init__(self, num_layers, embed_dim, vocab_size, context_length, num_heads):
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>num_layers <span style="color:#f92672">=</span> num_layers
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>embed_dim <span style="color:#f92672">=</span> embed_dim
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>vocab_size <span style="color:#f92672">=</span> vocab_size
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>context_length <span style="color:#f92672">=</span> context_length
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>num_heads <span style="color:#f92672">=</span> num_heads
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>tok_embed <span style="color:#f92672">=</span> Tensor<span style="color:#f92672">.</span>normal(vocab_size, embed_dim)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>pos_embed <span style="color:#f92672">=</span> Tensor<span style="color:#f92672">.</span>normal(context_length, embed_dim)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>blocks <span style="color:#f92672">=</span> [
+</span></span><span style="display:flex;"><span>            TransformerBlock(embed_dim, embed_dim <span style="color:#f92672">//</span> num_heads, num_heads)
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">for</span> _ <span style="color:#f92672">in</span> range(num_layers)
+</span></span><span style="display:flex;"><span>        ]
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>out <span style="color:#f92672">=</span> Tensor<span style="color:#f92672">.</span>normal(embed_dim, vocab_size <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> __call__(self, x):
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># input shape (B,T,C)</span>
+</span></span><span style="display:flex;"><span>        bsz <span style="color:#f92672">=</span> x<span style="color:#f92672">.</span>shape[<span style="color:#ae81ff">0</span>]
+</span></span><span style="display:flex;"><span>        pos <span style="color:#f92672">=</span> (
+</span></span><span style="display:flex;"><span>            Tensor<span style="color:#f92672">.</span>arange(self<span style="color:#f92672">.</span>context_length)
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">.</span>one_hot(self<span style="color:#f92672">.</span>context_length)
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">.</span>cast(dtypes<span style="color:#f92672">.</span>float)[: x<span style="color:#f92672">.</span>shape[<span style="color:#ae81ff">1</span>]]
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">.</span>expand((bsz, <span style="color:#66d9ef">None</span>, <span style="color:#66d9ef">None</span>))
+</span></span><span style="display:flex;"><span>        )
+</span></span><span style="display:flex;"><span>        x <span style="color:#f92672">=</span> x<span style="color:#f92672">.</span>one_hot(self<span style="color:#f92672">.</span>vocab_size)<span style="color:#f92672">.</span>linear(self<span style="color:#f92672">.</span>tok_embed) <span style="color:#f92672">+</span> pos<span style="color:#f92672">.</span>linear(
+</span></span><span style="display:flex;"><span>            self<span style="color:#f92672">.</span>pos_embed
+</span></span><span style="display:flex;"><span>        )
+</span></span><span style="display:flex;"><span>        x <span style="color:#f92672">=</span> x<span style="color:#f92672">.</span>sequential(self<span style="color:#f92672">.</span>blocks)
+</span></span><span style="display:flex;"><span>        x <span style="color:#f92672">=</span> x<span style="color:#f92672">.</span>reshape(<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>, x<span style="color:#f92672">.</span>shape[<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>])<span style="color:#f92672">.</span>linear(self<span style="color:#f92672">.</span>out)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> x<span style="color:#f92672">.</span>reshape((bsz, <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>, x<span style="color:#f92672">.</span>shape[<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>]))
+</span></span></code></pre></div><h2 id="training">Training</h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">loss_fn</span>(logits: Tensor, labels):
+</span></span><span style="display:flex;"><span>    log_probs <span style="color:#f92672">=</span> logits<span style="color:#f92672">.</span>log_softmax(axis<span style="color:#f92672">=-</span><span style="color:#ae81ff">1</span>)<span style="color:#f92672">.</span>cast(dtypes<span style="color:#f92672">.</span>float64)
+</span></span><span style="display:flex;"><span>    correct <span style="color:#f92672">=</span> log_probs<span style="color:#f92672">.</span>gather(idx<span style="color:#f92672">=</span>labels, dim<span style="color:#f92672">=-</span><span style="color:#ae81ff">1</span>)[:, <span style="color:#ae81ff">0</span>]
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span>correct<span style="color:#f92672">.</span>mean()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">def</span> <span style="color:#a6e22e">train</span>(
+</span></span><span style="display:flex;"><span>    model,
+</span></span><span style="display:flex;"><span>    X_train,
+</span></span><span style="display:flex;"><span>    Y_train,
+</span></span><span style="display:flex;"><span>    X_test,
+</span></span><span style="display:flex;"><span>    Y_test,
+</span></span><span style="display:flex;"><span>    optim,
+</span></span><span style="display:flex;"><span>    steps<span style="color:#f92672">=</span><span style="color:#ae81ff">10000</span>,  <span style="color:#75715e"># Adjust this as per the actual training epochs needed</span>
+</span></span><span style="display:flex;"><span>    lossfn<span style="color:#f92672">=</span><span style="color:#66d9ef">lambda</span> out, y: out<span style="color:#f92672">.</span>sparse_categorical_crossentropy(y),
+</span></span><span style="display:flex;"><span>    allow_jit<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>,
+</span></span><span style="display:flex;"><span>):
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">train_step</span>(x, y):
+</span></span><span style="display:flex;"><span>        out <span style="color:#f92672">=</span> model(x)[:, <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>]
+</span></span><span style="display:flex;"><span>        loss <span style="color:#f92672">=</span> lossfn(out, y)
+</span></span><span style="display:flex;"><span>        loss<span style="color:#f92672">.</span>backward()
+</span></span><span style="display:flex;"><span>        optim<span style="color:#f92672">.</span>step()
+</span></span><span style="display:flex;"><span>        optim<span style="color:#f92672">.</span>zero_grad()
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> loss<span style="color:#f92672">.</span>realize()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">test_step</span>(x, y):
+</span></span><span style="display:flex;"><span>        out <span style="color:#f92672">=</span> model(x)[:, <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>]
+</span></span><span style="display:flex;"><span>        optim<span style="color:#f92672">.</span>zero_grad()
+</span></span><span style="display:flex;"><span>        loss <span style="color:#f92672">=</span> lossfn(out, y)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> loss<span style="color:#f92672">.</span>realize()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> allow_jit:
+</span></span><span style="display:flex;"><span>        train_step <span style="color:#f92672">=</span> TinyJit(train_step)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    train_losses <span style="color:#f92672">=</span> []
+</span></span><span style="display:flex;"><span>    test_losses <span style="color:#f92672">=</span> []
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">with</span> Tensor<span style="color:#f92672">.</span>train():
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> i <span style="color:#f92672">in</span> (t <span style="color:#f92672">:=</span> trange(steps)):
+</span></span><span style="display:flex;"><span>            train_loss <span style="color:#f92672">=</span> train_step(X_train, Y_train)
+</span></span><span style="display:flex;"><span>            test_loss <span style="color:#f92672">=</span> test_step(X_test, Y_test)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            train_losses<span style="color:#f92672">.</span>append(train_loss<span style="color:#f92672">.</span>numpy())
+</span></span><span style="display:flex;"><span>            test_losses<span style="color:#f92672">.</span>append(test_loss<span style="color:#f92672">.</span>numpy())
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            t<span style="color:#f92672">.</span>set_description(
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;train loss: </span><span style="color:#e6db74">{</span>train_loss<span style="color:#f92672">.</span>numpy()<span style="color:#e6db74">:</span><span style="color:#e6db74">.2f</span><span style="color:#e6db74">}</span><span style="color:#e6db74">, test loss: </span><span style="color:#e6db74">{</span>test_loss<span style="color:#f92672">.</span>numpy()<span style="color:#e6db74">:</span><span style="color:#e6db74">.2f</span><span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>            )
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> train_losses, test_losses
+</span></span></code></pre></div><h2 id="execution---will-it-grok">Execution - will it grok?!?</h2>
+<p>Here, we instantiate all the necessary constants defined in the original paper. There&rsquo;s a couple important things to notice here:</p>
+<ul>
+<li>
+<p>Epochs: 55000 - When analyzing the trained model, it&rsquo;s helpful to train for extra epochs so that the learned weights are as refined and stable as possible. This will make more sense once you learn the model&rsquo;s algorithm.</p>
+</li>
+<li>
+<p>Weight Decay: 1 - As mentioned earlier, strong weight decay provides the pressure needed for the model to generalize rather than just memorizing the training set. Without it, there would be no incentive to find a more general solution once zero training loss is reached.</p>
+</li>
+<li>
+<p>Training loss: .3 - This 30% train / 70% test split was found to be the smallest training set size that still reliably leads to grokking. The authors noted that &ldquo;using ≥ 60% data leads to immediate generalization, while using 10% or 20% of the data doesn’t lead to grokking even after 40k epochs.&rdquo;</p>
+</li>
+</ul>
+<p>Now let&rsquo;s get to training.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>mod <span style="color:#f92672">=</span> <span style="color:#ae81ff">113</span>
+</span></span><span style="display:flex;"><span>num_layers <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>embed_dim <span style="color:#f92672">=</span> <span style="color:#ae81ff">128</span>
+</span></span><span style="display:flex;"><span>vocab_size <span style="color:#f92672">=</span> mod
+</span></span><span style="display:flex;"><span>context_length <span style="color:#f92672">=</span> <span style="color:#ae81ff">3</span>
+</span></span><span style="display:flex;"><span>num_heads <span style="color:#f92672">=</span> <span style="color:#ae81ff">4</span>
+</span></span><span style="display:flex;"><span>num_epochs <span style="color:#f92672">=</span> <span style="color:#ae81ff">55000</span>
+</span></span><span style="display:flex;"><span>learning_rate <span style="color:#f92672">=</span> <span style="color:#ae81ff">1e-3</span>
+</span></span><span style="display:flex;"><span>wd <span style="color:#f92672">=</span> <span style="color:#ae81ff">1.0</span>
+</span></span><span style="display:flex;"><span>train_test_ratio <span style="color:#f92672">=</span> <span style="color:#ae81ff">0.3</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>x_train, y_train, x_test, y_test <span style="color:#f92672">=</span> make_dataset(train_test_ratio, mod)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>model <span style="color:#f92672">=</span> GPT(num_layers, embed_dim, vocab_size, context_length, num_heads)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>optimizer <span style="color:#f92672">=</span> AdamW(get_parameters(model), lr<span style="color:#f92672">=</span>learning_rate, b1<span style="color:#f92672">=</span><span style="color:#ae81ff">0.9</span>, b2<span style="color:#f92672">=</span><span style="color:#ae81ff">0.98</span>, wd<span style="color:#f92672">=</span>wd)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>train_losses, test_losses <span style="color:#f92672">=</span> train(
+</span></span><span style="display:flex;"><span>        model,
+</span></span><span style="display:flex;"><span>        x_train,
+</span></span><span style="display:flex;"><span>        y_train,
+</span></span><span style="display:flex;"><span>        x_test,
+</span></span><span style="display:flex;"><span>        y_test,
+</span></span><span style="display:flex;"><span>        optimizer,
+</span></span><span style="display:flex;"><span>        steps<span style="color:#f92672">=</span>num_epochs,
+</span></span><span style="display:flex;"><span>        lossfn<span style="color:#f92672">=</span>loss_fn,
+</span></span><span style="display:flex;"><span>)
+</span></span></code></pre></div><h1 id="analysis">Analysis</h1>
+<p>Great! The model has been trained. If we see the characteristic grokking curve, we can be fairly confident that</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>plt<span style="color:#f92672">.</span>figure(figsize<span style="color:#f92672">=</span>(<span style="color:#ae81ff">10</span>, <span style="color:#ae81ff">5</span>))
+</span></span><span style="display:flex;"><span>train_losses_log <span style="color:#f92672">=</span> np<span style="color:#f92672">.</span>log(
+</span></span><span style="display:flex;"><span>    np<span style="color:#f92672">.</span>maximum(train_losses, <span style="color:#ae81ff">1e-10</span>)
+</span></span><span style="display:flex;"><span>)  <span style="color:#75715e"># Constant to avoid log(0)</span>
+</span></span><span style="display:flex;"><span>test_losses_log <span style="color:#f92672">=</span> np<span style="color:#f92672">.</span>log(np<span style="color:#f92672">.</span>maximum(test_losses, <span style="color:#ae81ff">1e-10</span>))
+</span></span><span style="display:flex;"><span>plt<span style="color:#f92672">.</span>plot(train_losses_log, label<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;Log Training Loss&#34;</span>)
+</span></span><span style="display:flex;"><span>plt<span style="color:#f92672">.</span>plot(test_losses_log, label<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;Log Testing Loss&#34;</span>)
+</span></span><span style="display:flex;"><span>plt<span style="color:#f92672">.</span>title(<span style="color:#e6db74">&#34;Logarithm of Training and Testing Losses Over Epochs&#34;</span>)
+</span></span><span style="display:flex;"><span>plt<span style="color:#f92672">.</span>xlabel(<span style="color:#e6db74">&#34;Epoch&#34;</span>)
+</span></span><span style="display:flex;"><span>plt<span style="color:#f92672">.</span>ylabel(<span style="color:#e6db74">&#34;Log Loss&#34;</span>)
+</span></span><span style="display:flex;"><span>plt<span style="color:#f92672">.</span>legend()
+</span></span><span style="display:flex;"><span>plt<span style="color:#f92672">.</span>grid(<span style="color:#66d9ef">True</span>)
+</span></span><span style="display:flex;"><span>plt<span style="color:#f92672">.</span>show()
+</span></span></code></pre></div><p>Here is the famous graph that I reproduced on my ipad very poorly.
+The exact training dynamics may be different than yours, so just know that the memorization (train loss=0) will occur
+after a couple hundred epochs, and the beginning of clean-up(when test loss starts to drop significantly) happens around 30,000.</p>
+<p><img src="/cropped.png" alt="grokking losses"></p>
+<p>You&rsquo;ll also notice I marked off three sections: memorization, circuit formation, and clean-up.
+In part 2 of this series, we&rsquo;ll perform a deep dive analysis of the algorithm learned by the model.</p>
+<h3 id="credits">Credits</h3>
+<ul>
+<li>1 <a href="https://imtiazhumayun.github.io/grokking/">https://imtiazhumayun.github.io/grokking/</a></li>
+<li>2 <a href="https://arxiv.org/pdf/2301.05217">https://arxiv.org/pdf/2301.05217</a></li>
+</ul>
 
 </main>
 
