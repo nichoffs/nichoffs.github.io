@@ -6,8 +6,15 @@
     <description>Recent content in Mini-Projects on Nic Hoffs Blog</description>
     <generator>Hugo</generator>
     <language>en-us</language>
-    <lastBuildDate>Sat, 08 Jun 2024 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Tue, 11 Jun 2024 16:25:35 +0200</lastBuildDate>
     <atom:link href="http://localhost:1313/post/mini_projects/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>TinyGrad GPT2 à la Karpathy - Part 1</title>
+      <link>http://localhost:1313/post/mini_projects/gpt2/</link>
+      <pubDate>Tue, 11 Jun 2024 16:25:35 +0200</pubDate>
+      <guid>http://localhost:1313/post/mini_projects/gpt2/</guid>
+      <description>Whenever Andrej Karpathy releases a new YouTube video, the only moral thing to do is drop all responsibilites and replicate it in TinyGrad. This released yesterday (June 10) and is over 4 hours long (I&amp;rsquo;m salivating), so I&amp;rsquo;ve only finished the first part. I anticipate the later parts of the video will include more Torch-specific optimizations, which will make things a bit more difficult.&#xA;Setting up inference with pre-trained weights GPT2 has four models from 124M to 1.</description>
+    </item>
     <item>
       <title>XOR</title>
       <link>http://localhost:1313/post/mini_projects/xor/</link>

@@ -6,14 +6,28 @@
     <description>Recent content in Home on Nic Hoffs Blog</description>
     <generator>Hugo</generator>
     <language>en-us</language>
-    <lastBuildDate>Sun, 09 Jun 2024 13:17:27 +0200</lastBuildDate>
+    <lastBuildDate>Tue, 11 Jun 2024 16:25:35 +0200</lastBuildDate>
     <atom:link href="http://localhost:1313/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>TinyGrad GPT2 à la Karpathy - Part 1</title>
+      <link>http://localhost:1313/post/mini_projects/gpt2/</link>
+      <pubDate>Tue, 11 Jun 2024 16:25:35 +0200</pubDate>
+      <guid>http://localhost:1313/post/mini_projects/gpt2/</guid>
+      <description>Whenever Andrej Karpathy releases a new YouTube video, the only moral thing to do is drop all responsibilites and replicate it in TinyGrad. This released yesterday (June 10) and is over 4 hours long (I&amp;rsquo;m salivating), so I&amp;rsquo;ve only finished the first part. I anticipate the later parts of the video will include more Torch-specific optimizations, which will make things a bit more difficult.&#xA;Setting up inference with pre-trained weights GPT2 has four models from 124M to 1.</description>
+    </item>
+    <item>
+      <title>Simple Symbolic Distillation on XOR Neural Network</title>
+      <link>http://localhost:1313/post/symbolic_regression/symbolic_distillation/</link>
+      <pubDate>Sun, 09 Jun 2024 21:25:23 +0200</pubDate>
+      <guid>http://localhost:1313/post/symbolic_regression/symbolic_distillation/</guid>
+      <description>What is symbolic distillation? Symbolic distillation is a technique pioneered by Miles Cranmer to improve interpretability of neural networks using symbolic regression. The basic premise is to approximate various components of a neural network by applying symbolic regression to different parts. These parts can then be substituted for the original network.&#xA;We&amp;rsquo;ll try this</description>
+    </item>
     <item>
       <title>Learning PySr for Symbolic Regression</title>
       <link>http://localhost:1313/post/symbolic_regression/learning_pysr/</link>
       <pubDate>Sun, 09 Jun 2024 13:17:27 +0200</pubDate>
       <guid>http://localhost:1313/post/symbolic_regression/learning_pysr/</guid>
-      <description>What is PySr? A library for symbolic regression made by one of my favorite researchers, Miles Cranmer. The backend genetic algorithm(optimization method for finding symbolic expression) runs on Julia, so it&amp;rsquo;s really fast. It&amp;rsquo;s also extremely flexible.&#xA;Running PySr I&amp;rsquo;m going to use a Jupyter notebook for all my PySr experiments.</description>
+      <description>What is PySr? A library for symbolic regression made by one of my favorite researchers, Miles Cranmer. The backend genetic algorithm(optimization method for finding symbolic expression) runs on Julia, so it&amp;rsquo;s really fast. It&amp;rsquo;s also extremely flexible.&#xA;Installing and Running PySr I&amp;rsquo;m going to use a Jupyter notebook with a virtualenv environment for all my PySr experiments.&#xA;virtualenv venv source venv/bin/activate pip install numpy pysr Vector-&amp;gt;Scalar Fit The first import of pysr will take much longer than the next as Julia dependencies are getting set up.</description>
     </item>
     <item>
       <title>XOR</title>

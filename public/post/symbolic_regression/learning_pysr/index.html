@@ -33,8 +33,34 @@
 <h1 id="what-is-pysr">What is PySr?</h1>
 <p>A library for symbolic regression made by one of my favorite researchers, Miles Cranmer.
 The backend genetic algorithm(optimization method for finding symbolic expression) runs on Julia, so it&rsquo;s really fast. It&rsquo;s also extremely flexible.</p>
-<h2 id="running-pysr">Running PySr</h2>
-<p>I&rsquo;m going to use a Jupyter notebook for all my PySr experiments.</p>
+<h2 id="installing-and-running-pysr">Installing and Running PySr</h2>
+<p>I&rsquo;m going to use a Jupyter notebook with a <code>virtualenv</code> environment for all my PySr experiments.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>virtualenv venv
+</span></span><span style="display:flex;"><span>source venv/bin/activate
+</span></span><span style="display:flex;"><span>pip install numpy pysr
+</span></span></code></pre></div><h1 id="vector-scalar-fit">Vector-&gt;Scalar Fit</h1>
+<p>The first import of pysr will take much longer than the next as Julia dependencies are getting set up.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> pysr <span style="color:#f92672">import</span> PySRRegressor
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> numpy <span style="color:#66d9ef">as</span> np
+</span></span></code></pre></div><p>This is function $f:\R^5\rightarrow\R$ that we&rsquo;ll be fitting symbolically:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>X <span style="color:#f92672">=</span> np<span style="color:#f92672">.</span>random<span style="color:#f92672">.</span>randn(<span style="color:#ae81ff">100</span>, <span style="color:#ae81ff">5</span>)
+</span></span><span style="display:flex;"><span>y <span style="color:#f92672">=</span> np<span style="color:#f92672">.</span>sum(X <span style="color:#f92672">*</span> X, axis<span style="color:#f92672">=-</span><span style="color:#ae81ff">1</span>)
+</span></span></code></pre></div><p><code>X</code> has shape <code>(100,5)</code>; <code>y</code>, <code>(100,)</code>.</p>
+<p>Now instantiate a new regressor model. Running <code>fit</code> on <code>PySrRegressor</code> will create lots of useful (but currently unecessary) files that we&rsquo;ll route to the <code>temp</code> folder:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>model <span style="color:#f92672">=</span> PySRRegressor(niterations<span style="color:#f92672">=</span><span style="color:#ae81ff">200</span>, binary_operators<span style="color:#f92672">=</span>[<span style="color:#e6db74">&#34;*&#34;</span>, <span style="color:#e6db74">&#39;+&#39;</span>],tempdir<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;./temp/&#39;</span>,temp_equation_file<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>)
+</span></span><span style="display:flex;"><span>model<span style="color:#f92672">.</span>fit(X, y)
+</span></span></code></pre></div><p><img src="/pysr_simplevsfit.png" alt="model output"></p>
+<p>To get the best model&rsquo;s equation as a rendered latex string, you can call the <code>sympy</code> method. The <code>latex</code> method returns the corresponding unrendered latex string.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>model<span style="color:#f92672">.</span>sympy()
+</span></span></code></pre></div><p>$$x_{0}^{2} + x_{1}^{2} + x_{2}^{2} + x_{3}^{2} + x_{4}^{2}$$</p>
+<p>As you can see, the model learned the exact ground-truth equation.</p>
+<h1 id="vector-vector-fit">Vector-&gt;Vector fit</h1>
+<p>PySr can also fit Vector-&gt;Vector functions by outputting a list with different symbolic expressions for each.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>model <span style="color:#f92672">=</span> PySRRegressor(niterations<span style="color:#f92672">=</span><span style="color:#ae81ff">200</span>, binary_operators<span style="color:#f92672">=</span>[<span style="color:#e6db74">&#34;*&#34;</span>, <span style="color:#e6db74">&#39;+&#39;</span>],tempdir<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;./temp/&#39;</span>,temp_equation_file<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>)
+</span></span><span style="display:flex;"><span>model<span style="color:#f92672">.</span>fit(X, y)
+</span></span><span style="display:flex;"><span>model<span style="color:#f92672">.</span>sympy()
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span><span style="color:#f92672">[</span>x0**2, x1**2, x2**2, x3**2, x4**2<span style="color:#f92672">]</span>
+</span></span></code></pre></div><p>Since the output is a list, we can&rsquo;t display each as latex.</p>
 
 </main>
 
@@ -46,6 +72,18 @@ The backend genetic algorithm(optimization method for finding symbolic expressio
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script>hljs.highlightAll();</script>
+
+<script>
+	document.addEventListener("DOMContentLoaded", function () {
+		renderMathInElement(document.body, {
+			delimiters: [
+				{left: "$$", right: "$$", display: true},
+				{left: "\\(", right: "\\)", display: false},
+				{left: "$", right: "$", display: false}
+			]
+		});
+	});
+</script>
 
   
   </footer>

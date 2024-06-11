@@ -159,6 +159,18 @@ Obviously, I&rsquo;m doing this in <code>tinygrad</code> because it&rsquo;s tiny
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script>hljs.highlightAll();</script>
 
+<script>
+	document.addEventListener("DOMContentLoaded", function () {
+		renderMathInElement(document.body, {
+			delimiters: [
+				{left: "$$", right: "$$", display: true},
+				{left: "\\(", right: "\\)", display: false},
+				{left: "$", right: "$", display: false}
+			]
+		});
+	});
+</script>
+
   
   </footer>
   </body>

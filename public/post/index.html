@@ -36,17 +36,17 @@
 	
 	<li>
 		
+		<a href="/post/mini_projects/">Mini-Projects</a>
+	</li>
+	
+	<li>
+		
 		<a href="/post/symbolic_regression/">Symbolic Regression</a>
 	</li>
 	
 	<li>
 		
 		<a href="/post/grokking_squared/">Grokking Squared</a>
-	</li>
-	
-	<li>
-		
-		<a href="/post/mini_projects/">Mini-Projects</a>
 	</li>
 	
 </ul>
@@ -59,6 +59,18 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script>hljs.highlightAll();</script>
+
+<script>
+	document.addEventListener("DOMContentLoaded", function () {
+		renderMathInElement(document.body, {
+			delimiters: [
+				{left: "$$", right: "$$", display: true},
+				{left: "\\(", right: "\\)", display: false},
+				{left: "$", right: "$", display: false}
+			]
+		});
+	});
+</script>
 
   
   </footer>

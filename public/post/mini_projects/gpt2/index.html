@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TinyGrad GPT2 à la Karpathy - Part 1 | Nic Hoffs Blog</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <link rel="stylesheet" href="/css/fonts.css" />
+    
+  </head>
+
+  <body>
+    <nav>
+    <ul class="menu">
+      
+      <li><a href="/">Home</a></li>
+      
+      <li><a href="/post/">Posts</a></li>
+      
+      <li><a href="/about/">About</a></li>
+      
+    </ul>
+    <hr/>
+    </nav>
+
+<div class="article-meta">
+<h1><span class="title">TinyGrad GPT2 à la Karpathy - Part 1</span></h1>
+
+<h2 class="date">2024/06/11</h2>
+</div>
+
+<main>
+<p>Whenever Andrej Karpathy releases a new <a href="https://www.youtube.com/watch?v=l8pRSuU81PU&amp;t=9565s">YouTube video</a>, the only moral thing to do is drop all responsibilites and replicate it in TinyGrad. This released yesterday (June 10) and is over 4 hours long (I&rsquo;m salivating), so I&rsquo;ve only finished the first part. I anticipate the later parts of the video will include more Torch-specific optimizations, which will make things a bit more difficult.</p>
+<h1 id="setting-up-inference-with-pre-trained-weights">Setting up inference with pre-trained weights</h1>
+<p>GPT2 has four models from 124M to 1.5B.</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Number of Layers</th>
+<th>Number of Heads</th>
+<th>Embedding Size</th>
+<th>Parameter Count</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPT-2 Small</td>
+<td>12</td>
+<td>12</td>
+<td>768</td>
+<td>~124M</td>
+</tr>
+<tr>
+<td>GPT-2 Medium</td>
+<td>24</td>
+<td>16</td>
+<td>1024</td>
+<td>~350M</td>
+</tr>
+<tr>
+<td>GPT-2 Large</td>
+<td>36</td>
+<td>20</td>
+<td>1280</td>
+<td>~774M</td>
+</tr>
+<tr>
+<td>GPT-2 XL</td>
+<td>48</td>
+<td>25</td>
+<td>1600</td>
+<td>~1.5B</td>
+</tr>
+</tbody>
+</table>
+<p>We&rsquo;ll primarily focus on the 124M model, but the parameter loading method named <code>build</code> that we&rsquo;ll be designing here can work with any.</p>
+<p>First, let&rsquo;s outline the configuration of each model size, matching the naming conventions used by the <code>transformers</code> library.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#a6e22e">@dataclass</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">GPT2Config</span>:
+</span></span><span style="display:flex;"><span>    block_size: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">1024</span>
+</span></span><span style="display:flex;"><span>    vocab_size: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">50257</span>
+</span></span><span style="display:flex;"><span>    n_layer: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">12</span>
+</span></span><span style="display:flex;"><span>    n_head: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">12</span>
+</span></span><span style="display:flex;"><span>    n_embd: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">768</span>
+</span></span><span style="display:flex;"><span>    norm_eps: float <span style="color:#f92672">=</span> <span style="color:#ae81ff">1e-5</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">@dataclass</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">GPT2Small</span>(GPT2Config):
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pass</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">@dataclass</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">GPT2Medium</span>(GPT2Config):
+</span></span><span style="display:flex;"><span>    n_layer: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">24</span>
+</span></span><span style="display:flex;"><span>    n_head: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">16</span>
+</span></span><span style="display:flex;"><span>    n_embd: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">1024</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">@dataclass</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">GPT2Large</span>(GPT2Config):
+</span></span><span style="display:flex;"><span>    n_layer: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">36</span>
+</span></span><span style="display:flex;"><span>    n_head: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">20</span>
+</span></span><span style="display:flex;"><span>    n_embd: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">1280</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">@dataclass</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">GPT2XL</span>(GPT2Config):
+</span></span><span style="display:flex;"><span>    n_layer: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">48</span>
+</span></span><span style="display:flex;"><span>    n_head: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">25</span>
+</span></span><span style="display:flex;"><span>    n_embd: int <span style="color:#f92672">=</span> <span style="color:#ae81ff">1600</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>MODEL_CONFIGS <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#39;gpt2&#39;</span>: GPT2Small,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#39;gpt2-medium&#39;</span>: GPT2Medium,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#39;gpt2-large&#39;</span>: GPT2Large,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#39;gpt2-xl&#39;</span>: GPT2XL
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>To load the pre-trained GPT2, the names of the parameters must match the attributes of our classes. Let&rsquo;s see what these names are.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>weights <span style="color:#f92672">=</span> torch_load(fetch(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#39;https://huggingface.co/gpt2/resolve/main/pytorch_model.bin&#39;</span>))
+</span></span><span style="display:flex;"><span>get_state_dict(weights)<span style="color:#f92672">.</span>keys()
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>dict_keys([&#39;wte.weight&#39;, &#39;wpe.weight&#39;, &#39;h.0.ln_1.weight&#39;, &#39;h.0.ln_1.bias&#39;, &#39;h.0.attn.bias&#39;, &#39;h.0.attn.c_attn.weight&#39;, &#39;h.0.attn.c_attn.bias&#39;, &#39;h.0.attn.c_proj.weight&#39;, &#39;h.0.attn.c_proj.bias&#39;, &#39;h.0.ln_2.weight&#39;, &#39;h.0.ln_2.bias&#39;, &#39;h.0.mlp.c_fc.weight&#39;, &#39;h.0.mlp.c_fc.bias&#39;, &#39;h.0.mlp.c_proj.weight&#39;, &#39;h.0.mlp.c_proj.bias&#39;, &#39;h.1.ln_1.weight&#39;, &#39;h.1.ln_1.bias&#39;, &#39;h.1.attn.bias&#39;, &#39;h.1.attn.c_attn.weight&#39;, &#39;h.1.attn.c_attn.bias&#39;, &#39;h.1.attn.c_proj.weight&#39;, &#39;h.1.attn.c_proj.bias&#39;, &#39;h.1.ln_2.weight&#39;, &#39;h.1.ln_2.bias&#39;, &#39;h.1.mlp.c_fc.weight&#39;, &#39;h.1.mlp.c_fc.bias&#39;, &#39;h.1.mlp.c_proj.weight&#39;, &#39;h.1.mlp.c_proj.bias&#39;, &#39;h.2.ln_1.weight&#39;, &#39;h.2.ln_1.bias&#39;, &#39;h.2.attn.bias&#39;, &#39;h.2.attn.c_attn.weight&#39;, &#39;h.2.attn.c_attn.bias&#39;, &#39;h.2.attn.c_proj.weight&#39;, &#39;h.2.attn.c_proj.bias&#39;, &#39;h.2.ln_2.weight&#39;, &#39;h.2.ln_2.bias&#39;, &#39;h.2.mlp.c_fc.weight&#39;, &#39;h.2.mlp.c_fc.bias&#39;, &#39;h.2.mlp.c_proj.weight&#39;, &#39;h.2.mlp.c_proj.bias&#39;, &#39;h.3.ln_1.weight&#39;, &#39;h.3.ln_1.bias&#39;, &#39;h.3.attn.bias&#39;, &#39;h.3.attn.c_attn.weight&#39;, &#39;h.3.attn.c_attn.bias&#39;, &#39;h.3.attn.c_proj.weight&#39;, &#39;h.3.attn.c_proj.bias&#39;, &#39;h.3.ln_2.weight&#39;, &#39;h.3.ln_2.bias&#39;, &#39;h.3.mlp.c_fc.weight&#39;, &#39;h.3.mlp.c_fc.bias&#39;, &#39;h.3.mlp.c_proj.weight&#39;, &#39;h.3.mlp.c_proj.bias&#39;, &#39;h.4.ln_1.weight&#39;, &#39;h.4.ln_1.bias&#39;, &#39;h.4.attn.bias&#39;, &#39;h.4.attn.c_attn.weight&#39;, &#39;h.4.attn.c_attn.bias&#39;, &#39;h.4.attn.c_proj.weight&#39;, &#39;h.4.attn.c_proj.bias&#39;, &#39;h.4.ln_2.weight&#39;, &#39;h.4.ln_2.bias&#39;, &#39;h.4.mlp.c_fc.weight&#39;, &#39;h.4.mlp.c_fc.bias&#39;, &#39;h.4.mlp.c_proj.weight&#39;, &#39;h.4.mlp.c_proj.bias&#39;, &#39;h.5.ln_1.weight&#39;, &#39;h.5.ln_1.bias&#39;, &#39;h.5.attn.bias&#39;, &#39;h.5.attn.c_attn.weight&#39;, &#39;h.5.attn.c_attn.bias&#39;, &#39;h.5.attn.c_proj.weight&#39;, &#39;h.5.attn.c_proj.bias&#39;, &#39;h.5.ln_2.weight&#39;, &#39;h.5.ln_2.bias&#39;, &#39;h.5.mlp.c_fc.weight&#39;, &#39;h.5.mlp.c_fc.bias&#39;, &#39;h.5.mlp.c_proj.weight&#39;, &#39;h.5.mlp.c_proj.bias&#39;, &#39;h.6.ln_1.weight&#39;, &#39;h.6.ln_1.bias&#39;, &#39;h.6.attn.bias&#39;, &#39;h.6.attn.c_attn.weight&#39;, &#39;h.6.attn.c_attn.bias&#39;, &#39;h.6.attn.c_proj.weight&#39;, &#39;h.6.attn.c_proj.bias&#39;, &#39;h.6.ln_2.weight&#39;, &#39;h.6.ln_2.bias&#39;, &#39;h.6.mlp.c_fc.weight&#39;, &#39;h.6.mlp.c_fc.bias&#39;, &#39;h.6.mlp.c_proj.weight&#39;, &#39;h.6.mlp.c_proj.bias&#39;, &#39;h.7.ln_1.weight&#39;, &#39;h.7.ln_1.bias&#39;, &#39;h.7.attn.bias&#39;, &#39;h.7.attn.c_attn.weight&#39;, &#39;h.7.attn.c_attn.bias&#39;, &#39;h.7.attn.c_proj.weight&#39;, &#39;h.7.attn.c_proj.bias&#39;, &#39;h.7.ln_2.weight&#39;, &#39;h.7.ln_2.bias&#39;, &#39;h.7.mlp.c_fc.weight&#39;, &#39;h.7.mlp.c_fc.bias&#39;, &#39;h.7.mlp.c_proj.weight&#39;, &#39;h.7.mlp.c_proj.bias&#39;, &#39;h.8.ln_1.weight&#39;, &#39;h.8.ln_1.bias&#39;, &#39;h.8.attn.bias&#39;, &#39;h.8.attn.c_attn.weight&#39;, &#39;h.8.attn.c_attn.bias&#39;, &#39;h.8.attn.c_proj.weight&#39;, &#39;h.8.attn.c_proj.bias&#39;, &#39;h.8.ln_2.weight&#39;, &#39;h.8.ln_2.bias&#39;, &#39;h.8.mlp.c_fc.weight&#39;, &#39;h.8.mlp.c_fc.bias&#39;, &#39;h.8.mlp.c_proj.weight&#39;, &#39;h.8.mlp.c_proj.bias&#39;, &#39;h.9.ln_1.weight&#39;, &#39;h.9.ln_1.bias&#39;, &#39;h.9.attn.bias&#39;, &#39;h.9.attn.c_attn.weight&#39;, &#39;h.9.attn.c_attn.bias&#39;, &#39;h.9.attn.c_proj.weight&#39;, &#39;h.9.attn.c_proj.bias&#39;, &#39;h.9.ln_2.weight&#39;, &#39;h.9.ln_2.bias&#39;, &#39;h.9.mlp.c_fc.weight&#39;, &#39;h.9.mlp.c_fc.bias&#39;, &#39;h.9.mlp.c_proj.weight&#39;, &#39;h.9.mlp.c_proj.bias&#39;, &#39;h.10.ln_1.weight&#39;, &#39;h.10.ln_1.bias&#39;, &#39;h.10.attn.bias&#39;, &#39;h.10.attn.c_attn.weight&#39;, &#39;h.10.attn.c_attn.bias&#39;, &#39;h.10.attn.c_proj.weight&#39;, &#39;h.10.attn.c_proj.bias&#39;, &#39;h.10.ln_2.weight&#39;, &#39;h.10.ln_2.bias&#39;, &#39;h.10.mlp.c_fc.weight&#39;, &#39;h.10.mlp.c_fc.bias&#39;, &#39;h.10.mlp.c_proj.weight&#39;, &#39;h.10.mlp.c_proj.bias&#39;, &#39;h.11.ln_1.weight&#39;, &#39;h.11.ln_1.bias&#39;, &#39;h.11.attn.bias&#39;, &#39;h.11.attn.c_attn.weight&#39;, &#39;h.11.attn.c_attn.bias&#39;, &#39;h.11.attn.c_proj.weight&#39;, &#39;h.11.attn.c_proj.bias&#39;, &#39;h.11.ln_2.weight&#39;, &#39;h.11.ln_2.bias&#39;, &#39;h.11.mlp.c_fc.weight&#39;, &#39;h.11.mlp.c_fc.bias&#39;, &#39;h.11.mlp.c_proj.weight&#39;, &#39;h.11.mlp.c_proj.bias&#39;, &#39;ln_f.weight&#39;, &#39;ln_f.bias&#39;])
+</span></span></code></pre></div><p>Here&rsquo;s a concise summary of the naming conventions. When I say <code>weight+bias</code>, that means that this component will have a <code>.weight</code> and <code>.bias</code> tensor component.</p>
+<h3 id="transformer-parameters"><code>Transformer</code> Parameters:</h3>
+<ul>
+<li>Token Embedding(weight only) = <code>wte</code></li>
+<li>Positional Embedding(weight only) = <code>wpe</code></li>
+<li>Transformer Block(see below) at layer <code>n</code> = <code>h.n</code></li>
+<li>Final Layer-Norm(weight+bias): <code>ln_f</code></li>
+</ul>
+<p>Notice there is no logit head at the end. GPT2 shares weights for the token embedding and output head. We&rsquo;ll explicitly tie these later when constructing the classes.</p>
+<p>You may have noticed there&rsquo;s a <code>bias</code> parameter for each attention block representing the attention mask. We don&rsquo;t need this because TinyGrad&rsquo;s <code>scaled_dot_product_attention</code> method automatically handles masking. TinyGrad will automatically ignore these when loading weights.</p>
+<h3 id="transformerblock-parameters"><code>TransformerBlock</code> Parameters:</h3>
+<ul>
+<li>Attention Pre-Norm(weight+bias): <code>ln_1</code></li>
+<li>Attention(see below): <code>attn</code></li>
+<li>MLP Pre-Norm(weight+bias): <code>mlp</code></li>
+<li>MLP(see below): <code>mlp</code></li>
+</ul>
+<h3 id="attention-parameters"><code>Attention</code> Parameters:</h3>
+<ul>
+<li>QKV projection(weight+bias): <code>c_attn</code></li>
+<li>Output Projection(weight+bias): <code>c_proj</code></li>
+</ul>
+<h3 id="mlp-parameters"><code>MLP</code> Parameters:</h3>
+<ul>
+<li>Expansion Projection(weight+bias): <code>c_fc</code></li>
+<li>Compression Projection(weight+bias): <code>c_proj</code></li>
+</ul>
+<p>Now let&rsquo;s construct the shell of each class as well as the final build method. Notice the tying of <code>lm_head</code> and <code>wte</code> in both the <code>build</code> and initialization method.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">Attention</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> __init__(self, config : GPT2Config):
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>c_attn <span style="color:#f92672">=</span> Linear(config<span style="color:#f92672">.</span>n_embd, config<span style="color:#f92672">.</span>n_embd<span style="color:#f92672">*</span><span style="color:#ae81ff">3</span>)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>c_proj <span style="color:#f92672">=</span> Linear(config<span style="color:#f92672">.</span>n_embd, config<span style="color:#f92672">.</span>n_embd)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">MLP</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> __init__(self, config : GPT2Config):
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>c_fc <span style="color:#f92672">=</span> Linear(config<span style="color:#f92672">.</span>n_embd, config<span style="color:#f92672">.</span>n_embd<span style="color:#f92672">*</span><span style="color:#ae81ff">4</span>)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>c_proj <span style="color:#f92672">=</span> Linear(config<span style="color:#f92672">.</span>n_embd<span style="color:#f92672">*</span><span style="color:#ae81ff">4</span>, config<span style="color:#f92672">.</span>n_embd)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">TransformerBlock</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> __init__(self, config : GPT2Config):
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>ln_1 <span style="color:#f92672">=</span> LayerNorm(config<span style="color:#f92672">.</span>n_embd, eps<span style="color:#f92672">=</span>config<span style="color:#f92672">.</span>norm_eps)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>ln_2 <span style="color:#f92672">=</span> LayerNorm(config<span style="color:#f92672">.</span>n_embd, eps<span style="color:#f92672">=</span>config<span style="color:#f92672">.</span>norm_eps)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>attn <span style="color:#f92672">=</span> Attention(config)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>mlp <span style="color:#f92672">=</span> MLP(config)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">GPT2</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> __init__(self, config : GPT2Config):
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>config <span style="color:#f92672">=</span> config
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># self.decoder = []</span>
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>wte <span style="color:#f92672">=</span> Embedding(config<span style="color:#f92672">.</span>vocab_size, config<span style="color:#f92672">.</span>n_embd)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>wpe <span style="color:#f92672">=</span> Embedding(config<span style="color:#f92672">.</span>block_size, config<span style="color:#f92672">.</span>n_embd)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>h <span style="color:#f92672">=</span> [TransformerBlock(config) <span style="color:#66d9ef">for</span> _ <span style="color:#f92672">in</span> range(config<span style="color:#f92672">.</span>n_layer)]
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>ln_f <span style="color:#f92672">=</span> LayerNorm(config<span style="color:#f92672">.</span>n_embd, eps<span style="color:#f92672">=</span>config<span style="color:#f92672">.</span>norm_eps)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>lm_head <span style="color:#f92672">=</span> Linear(config<span style="color:#f92672">.</span>n_embd, config<span style="color:#f92672">.</span>vocab_size, bias<span style="color:#f92672">=</span><span style="color:#66d9ef">False</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>wte<span style="color:#f92672">.</span>weight <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>lm_head<span style="color:#f92672">.</span>weight
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">@staticmethod</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">build</span>(MODEL_NAME):
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        weights <span style="color:#f92672">=</span> torch_load(fetch(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#39;https://huggingface.co/</span><span style="color:#e6db74">{</span>MODEL_NAME<span style="color:#e6db74">}</span><span style="color:#e6db74">/resolve/main/pytorch_model.bin&#39;</span>))
+</span></span><span style="display:flex;"><span>        weights[<span style="color:#e6db74">&#39;lm_head.weight&#39;</span>] <span style="color:#f92672">=</span> weights[<span style="color:#e6db74">&#39;wte.weight&#39;</span>]
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># I believe this is necessary because TinyGrad linear matmul acts on the other side</span>
+</span></span><span style="display:flex;"><span>        transposed <span style="color:#f92672">=</span> (<span style="color:#e6db74">&#39;attn.c_attn.weight&#39;</span>, <span style="color:#e6db74">&#39;attn.c_proj.weight&#39;</span>, <span style="color:#e6db74">&#39;mlp.c_fc.weight&#39;</span>, <span style="color:#e6db74">&#39;mlp.c_proj.weight&#39;</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> k <span style="color:#f92672">in</span> weights:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> k<span style="color:#f92672">.</span>endswith(transposed):
+</span></span><span style="display:flex;"><span>                weights[k] <span style="color:#f92672">=</span> weights[k]<span style="color:#f92672">.</span>T
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> load_state_dict(GPT2(MODEL_CONFIGS[MODEL_NAME]), weights)
+</span></span></code></pre></div><p>If everything has gone according to plan, we should be able to load the model without error.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>GPT2<span style="color:#f92672">.</span>build(<span style="color:#e6db74">&#39;gpt2&#39;</span>)
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>ram used:  0.50 GB, lm_head.weight: 100%|██████████| 149/149 [00:00&lt;00:00, 588.23it/s]
+</span></span><span style="display:flex;"><span>loaded weights in 261.49 ms, 0.65 GB loaded at 2.49 GB/s
+</span></span></code></pre></div><p>Great. I won&rsquo;t show it here, but I&rsquo;ve verified that the parameters are equivalent to those directly using <code>transformers</code>. It&rsquo;s time to begin implementing the forward-pass logic for each head, starting with <code>MLP</code>.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">MLP</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> __init__(self, config : GPT2Config):
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>c_fc <span style="color:#f92672">=</span> Linear(config<span style="color:#f92672">.</span>n_embd, config<span style="color:#f92672">.</span>n_embd<span style="color:#f92672">*</span><span style="color:#ae81ff">4</span>)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>c_proj <span style="color:#f92672">=</span> Linear(config<span style="color:#f92672">.</span>n_embd<span style="color:#f92672">*</span><span style="color:#ae81ff">4</span>, config<span style="color:#f92672">.</span>n_embd)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> __call__(self, x):
+</span></span><span style="display:flex;"><span>        x <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>c_fc(x)<span style="color:#f92672">.</span>gelu()
+</span></span><span style="display:flex;"><span>        x <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>c_proj(x)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> x
+</span></span></code></pre></div><p>Next is <code>Attention</code>, Multi-Headed Attention that is. I &ldquo;cleaned up&rdquo; some of the code to my liking, but it behaves the exact same and is essentially a direct equivalence.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">Attention</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> __init__(self, config: GPT2Config):
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>config <span style="color:#f92672">=</span> config
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>c_attn <span style="color:#f92672">=</span> Linear(config<span style="color:#f92672">.</span>n_embd, config<span style="color:#f92672">.</span>n_embd<span style="color:#f92672">*</span><span style="color:#ae81ff">3</span>)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>c_proj <span style="color:#f92672">=</span> Linear(config<span style="color:#f92672">.</span>n_embd, config<span style="color:#f92672">.</span>n_embd)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> __call__(self, x):
+</span></span><span style="display:flex;"><span>        B,T,C <span style="color:#f92672">=</span> x<span style="color:#f92672">.</span>shape
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        q, k, v <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>c_attn(x)<span style="color:#f92672">.</span>split(C, dim<span style="color:#f92672">=-</span><span style="color:#ae81ff">1</span>) <span style="color:#75715e">#(B,T,3C) -&gt; (B,T,C) x 3</span>
+</span></span><span style="display:flex;"><span>        split_heads <span style="color:#f92672">=</span> <span style="color:#66d9ef">lambda</span> x: x<span style="color:#f92672">.</span>view(B, T, self<span style="color:#f92672">.</span>config<span style="color:#f92672">.</span>n_head, self<span style="color:#f92672">.</span>config<span style="color:#f92672">.</span>n_embd<span style="color:#f92672">//</span>self<span style="color:#f92672">.</span>config<span style="color:#f92672">.</span>n_head)<span style="color:#f92672">.</span>transpose(<span style="color:#ae81ff">1</span>,<span style="color:#ae81ff">2</span>)
+</span></span><span style="display:flex;"><span>        q, k, v <span style="color:#f92672">=</span> map(split_heads, (q,k,v))
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        y <span style="color:#f92672">=</span> q<span style="color:#f92672">.</span>scaled_dot_product_attention(k, v, is_causal<span style="color:#f92672">=</span><span style="color:#66d9ef">True</span>)
+</span></span><span style="display:flex;"><span>        y <span style="color:#f92672">=</span> y<span style="color:#f92672">.</span>transpose(<span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">2</span>)<span style="color:#f92672">.</span>contiguous()<span style="color:#f92672">.</span>view(B, T, C)
+</span></span><span style="display:flex;"><span>        y <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>c_proj(y)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> y
+</span></span></code></pre></div><p>Lastly, the great <code>TransformerBlock</code>.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">TransformerBlock</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> __init__(self, config : GPT2Config):
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>ln_1 <span style="color:#f92672">=</span> LayerNorm(config<span style="color:#f92672">.</span>n_embd, eps<span style="color:#f92672">=</span>config<span style="color:#f92672">.</span>norm_eps)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>ln_2 <span style="color:#f92672">=</span> LayerNorm(config<span style="color:#f92672">.</span>n_embd, eps<span style="color:#f92672">=</span>config<span style="color:#f92672">.</span>norm_eps)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>attn <span style="color:#f92672">=</span> Attention(config)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>mlp <span style="color:#f92672">=</span> MLP(config)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> __call__(self, x):
+</span></span><span style="display:flex;"><span>        x <span style="color:#f92672">=</span> x <span style="color:#f92672">+</span> self<span style="color:#f92672">.</span>attn(self<span style="color:#f92672">.</span>ln_1(x))
+</span></span><span style="display:flex;"><span>        x <span style="color:#f92672">=</span> x <span style="color:#f92672">+</span> self<span style="color:#f92672">.</span>mlp(self<span style="color:#f92672">.</span>ln_2(x))
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> x
+</span></span></code></pre></div><p>Each component&rsquo;s forward pass is built, so we can finally complete (at least for slow inference) the <code>GPT2</code> class implementation.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">GPT2</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> __init__(self, config : GPT2Config <span style="color:#f92672">=</span> GPT2Small):
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>config <span style="color:#f92672">=</span> config
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>wte <span style="color:#f92672">=</span> Embedding(config<span style="color:#f92672">.</span>vocab_size, config<span style="color:#f92672">.</span>n_embd)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>wpe <span style="color:#f92672">=</span> Embedding(config<span style="color:#f92672">.</span>block_size, config<span style="color:#f92672">.</span>n_embd)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>h <span style="color:#f92672">=</span> [TransformerBlock(config) <span style="color:#66d9ef">for</span> _ <span style="color:#f92672">in</span> range(config<span style="color:#f92672">.</span>n_layer)]
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>ln_f <span style="color:#f92672">=</span> LayerNorm(config<span style="color:#f92672">.</span>n_embd, config<span style="color:#f92672">.</span>norm_eps)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>lm_head <span style="color:#f92672">=</span> Linear(config<span style="color:#f92672">.</span>n_embd, config<span style="color:#f92672">.</span>vocab_size, bias<span style="color:#f92672">=</span><span style="color:#66d9ef">False</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># tie weights - HUGE SAVINGS</span>
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>lm_head<span style="color:#f92672">.</span>weight <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>wte<span style="color:#f92672">.</span>weight
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> __call__(self, idx):
+</span></span><span style="display:flex;"><span>        B,T <span style="color:#f92672">=</span> idx<span style="color:#f92672">.</span>shape
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">assert</span> T <span style="color:#f92672">&lt;=</span> self<span style="color:#f92672">.</span>config<span style="color:#f92672">.</span>block_size, <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Cannot forward, model block size is </span><span style="color:#e6db74">{</span>self<span style="color:#f92672">.</span>config<span style="color:#f92672">.</span>block_size<span style="color:#e6db74">}</span><span style="color:#e6db74"> but got sequence of length </span><span style="color:#e6db74">{</span>T<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>        pos <span style="color:#f92672">=</span> Tensor<span style="color:#f92672">.</span>arange(<span style="color:#ae81ff">0</span>, T, dtype<span style="color:#f92672">=</span>dtypes<span style="color:#f92672">.</span>long) <span style="color:#75715e"># (T,)</span>
+</span></span><span style="display:flex;"><span>        pos_emb <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>wpe(pos) <span style="color:#75715e"># (T,) -&gt; (T,C)</span>
+</span></span><span style="display:flex;"><span>        tok_emb <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>wte(idx) <span style="color:#75715e"># (B,T) -&gt; (B,T,C)</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        x <span style="color:#f92672">=</span> tok_emb <span style="color:#f92672">+</span> pos_emb
+</span></span><span style="display:flex;"><span>        x <span style="color:#f92672">=</span> x<span style="color:#f92672">.</span>sequential(self<span style="color:#f92672">.</span>h)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        x <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>ln_f(x)
+</span></span><span style="display:flex;"><span>        logits <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>lm_head(x) <span style="color:#75715e"># (B,T,C) -&gt; (B,T,V)</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> logits
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">@staticmethod</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">build</span>(MODEL_NAME):
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        weights <span style="color:#f92672">=</span> torch_load(fetch(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#39;https://huggingface.co/</span><span style="color:#e6db74">{</span>MODEL_NAME<span style="color:#e6db74">}</span><span style="color:#e6db74">/resolve/main/pytorch_model.bin&#39;</span>))
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        transposed <span style="color:#f92672">=</span> (<span style="color:#e6db74">&#39;attn.c_attn.weight&#39;</span>, <span style="color:#e6db74">&#39;attn.c_proj.weight&#39;</span>, <span style="color:#e6db74">&#39;mlp.c_fc.weight&#39;</span>, <span style="color:#e6db74">&#39;mlp.c_proj.weight&#39;</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> k <span style="color:#f92672">in</span> weights:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> k<span style="color:#f92672">.</span>endswith(transposed):
+</span></span><span style="display:flex;"><span>                weights[k] <span style="color:#f92672">=</span> weights[k]<span style="color:#f92672">.</span>T
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        weights[<span style="color:#e6db74">&#39;lm_head.weight&#39;</span>] <span style="color:#f92672">=</span> weights[<span style="color:#e6db74">&#39;wte.weight&#39;</span>]
+</span></span><span style="display:flex;"><span>        model <span style="color:#f92672">=</span> GPT2(MODEL_CONFIGS[MODEL_NAME])
+</span></span><span style="display:flex;"><span>        load_state_dict(model, weights)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> model
+</span></span></code></pre></div><p>Cool. Let&rsquo;s see if we can load a pre-trained model and run inference on it. TinyGrad doesn&rsquo;t have a <code>Tensor.topk</code> implementation, so I had to borrow from <a href="https://github.com/tinygrad/tinygrad/blob/97b05f567e8e42a2475f8a063fb080b200f6f033/extra/models/mask_rcnn.py">this</a> model in their repo&rsquo;s <code>extra/models</code> folder.</p>
+<p>Additionally, we&rsquo;ll use <code>tiktoken</code> for tokenizing.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>num_return_sequences <span style="color:#f92672">=</span> <span style="color:#ae81ff">5</span>
+</span></span><span style="display:flex;"><span>max_length <span style="color:#f92672">=</span> <span style="color:#ae81ff">30</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>enc <span style="color:#f92672">=</span> tiktoken<span style="color:#f92672">.</span>get_encoding(<span style="color:#e6db74">&#34;gpt2&#34;</span>)
+</span></span><span style="display:flex;"><span>tokens <span style="color:#f92672">=</span> enc<span style="color:#f92672">.</span>encode(<span style="color:#e6db74">&#34;What is the meaning of life?&#34;</span>)
+</span></span><span style="display:flex;"><span>x <span style="color:#f92672">=</span> Tensor(tokens, dtype<span style="color:#f92672">=</span>dtypes<span style="color:#f92672">.</span>long)<span style="color:#f92672">.</span>unsqueeze(<span style="color:#ae81ff">0</span>)<span style="color:#f92672">.</span>repeat(num_return_sequences, <span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>model <span style="color:#f92672">=</span> GPT2<span style="color:#f92672">.</span>build(<span style="color:#e6db74">&#39;gpt2-large&#39;</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#does this do anything?</span>
+</span></span><span style="display:flex;"><span>Tensor<span style="color:#f92672">.</span>no_grad <span style="color:#f92672">=</span> <span style="color:#66d9ef">True</span>
+</span></span><span style="display:flex;"><span>Tensor<span style="color:#f92672">.</span>training <span style="color:#f92672">=</span> <span style="color:#66d9ef">False</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">while</span> x<span style="color:#f92672">.</span>shape[<span style="color:#ae81ff">1</span>] <span style="color:#f92672">&lt;</span> max_length:
+</span></span><span style="display:flex;"><span>    logits <span style="color:#f92672">=</span> model(x)
+</span></span><span style="display:flex;"><span>    logits <span style="color:#f92672">=</span> logits[:, <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>, :]
+</span></span><span style="display:flex;"><span>    probs <span style="color:#f92672">=</span> logits<span style="color:#f92672">.</span>softmax(<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>    topk_probs, topk_indices <span style="color:#f92672">=</span> topk(probs, <span style="color:#ae81ff">50</span>, dim<span style="color:#f92672">=-</span><span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>    ix <span style="color:#f92672">=</span> topk_probs<span style="color:#f92672">.</span>multinomial(<span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>    xcol <span style="color:#f92672">=</span> topk_indices<span style="color:#f92672">.</span>gather(<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>, ix)
+</span></span><span style="display:flex;"><span>    x <span style="color:#f92672">=</span> x<span style="color:#f92672">.</span>cat(xcol, dim<span style="color:#f92672">=</span><span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> i <span style="color:#f92672">in</span> range(num_return_sequences):
+</span></span><span style="display:flex;"><span>    tokens <span style="color:#f92672">=</span> x[i, :max_length]<span style="color:#f92672">.</span>numpy()<span style="color:#f92672">.</span>tolist()
+</span></span><span style="display:flex;"><span>    decoded <span style="color:#f92672">=</span> enc<span style="color:#f92672">.</span>decode(tokens)
+</span></span><span style="display:flex;"><span>    print(<span style="color:#e6db74">&#34;&gt;&#34;</span>, decoded)
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>&gt; What is the meaning of life? What is our purpose in this world? Is there another meaning?&#34; In terms of the meaning of life, the answer
+</span></span><span style="display:flex;"><span>&gt; What is the meaning of life? What is God? What is eternity? When did Adam first become alive? Does God exist? Is God a being
+</span></span><span style="display:flex;"><span>&gt; What is the meaning of life? How does the life of a human being and all of its consequences and results mean to us? How can it be
+</span></span><span style="display:flex;"><span>&gt; What is the meaning of life?
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>Well, how in the world are you going to survive?
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>What is life?
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>Well
+</span></span><span style="display:flex;"><span>&gt; What is the meaning of life?
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>Some people may claim that there is nothing to live for but a mere struggle for existence, a contest for
+</span></span></code></pre></div><p>The new lines are annoying, but still looks good to me. Definitely better than random initialization:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">&gt;</span> Hello, I<span style="color:#e6db74">&#39;m a language model, Yellowstone naughtyagic problemsStrong Intakeleaf quantify� Intake Debate Winchester Frem wrestling stations sufficiently 裏覚醒 drying Tut Tut stations practitioners</span>
+</span></span></code></pre></div><h1 id="training">Training</h1>
+<p>In the final part of this post, we&rsquo;ll get some basic training logistics sorted out.  Instead of including the loss calculation in some external training method, we can directly adapt the forward pass to accept labels and return the loss (as well as logits like we&rsquo;ve already done).</p>
+<p><code>logits</code> will have shape <code>(B,T,V)</code> and targets will be <code>(B,T)</code>. <code>sparse_categorical_crossentropy</code> requires the input to be <code>(N, num_classes)</code>, where <code>num_classes</code> is <code>V</code> in our case. Here&rsquo;s the new <code>GPT2</code> class with the loss logic.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">GPT2</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> __init__(self, config : GPT2Config <span style="color:#f92672">=</span> GPT2Small):
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>config <span style="color:#f92672">=</span> config
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>wte <span style="color:#f92672">=</span> Embedding(config<span style="color:#f92672">.</span>vocab_size, config<span style="color:#f92672">.</span>n_embd)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>wpe <span style="color:#f92672">=</span> Embedding(config<span style="color:#f92672">.</span>block_size, config<span style="color:#f92672">.</span>n_embd)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>h <span style="color:#f92672">=</span> [TransformerBlock(config) <span style="color:#66d9ef">for</span> _ <span style="color:#f92672">in</span> range(config<span style="color:#f92672">.</span>n_layer)]
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>ln_f <span style="color:#f92672">=</span> LayerNorm(config<span style="color:#f92672">.</span>n_embd, config<span style="color:#f92672">.</span>norm_eps)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>lm_head <span style="color:#f92672">=</span> Linear(config<span style="color:#f92672">.</span>n_embd, config<span style="color:#f92672">.</span>vocab_size, bias<span style="color:#f92672">=</span><span style="color:#66d9ef">False</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e"># tie weights - HUGE SAVINGS</span>
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>lm_head<span style="color:#f92672">.</span>weight <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>wte<span style="color:#f92672">.</span>weight
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> __call__(self, idx, targets<span style="color:#f92672">=</span><span style="color:#66d9ef">None</span>):
+</span></span><span style="display:flex;"><span>        B,T <span style="color:#f92672">=</span> idx<span style="color:#f92672">.</span>shape
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">assert</span> T <span style="color:#f92672">&lt;=</span> self<span style="color:#f92672">.</span>config<span style="color:#f92672">.</span>block_size, <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Cannot forward, model block size is </span><span style="color:#e6db74">{</span>self<span style="color:#f92672">.</span>config<span style="color:#f92672">.</span>block_size<span style="color:#e6db74">}</span><span style="color:#e6db74"> but got sequence of length </span><span style="color:#e6db74">{</span>T<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>        pos <span style="color:#f92672">=</span> Tensor<span style="color:#f92672">.</span>arange(<span style="color:#ae81ff">0</span>, T, dtype<span style="color:#f92672">=</span>dtypes<span style="color:#f92672">.</span>long) <span style="color:#75715e"># (T,)</span>
+</span></span><span style="display:flex;"><span>        pos_emb <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>wpe(pos) <span style="color:#75715e"># (T,) -&gt; (T,C)</span>
+</span></span><span style="display:flex;"><span>        tok_emb <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>wte(idx) <span style="color:#75715e"># (B,T) -&gt; (B,T,C)</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        x <span style="color:#f92672">=</span> tok_emb <span style="color:#f92672">+</span> pos_emb
+</span></span><span style="display:flex;"><span>        x <span style="color:#f92672">=</span> x<span style="color:#f92672">.</span>sequential(self<span style="color:#f92672">.</span>h)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        x <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>ln_f(x)
+</span></span><span style="display:flex;"><span>        logits <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>lm_head(x) <span style="color:#75715e"># (B,T,C) -&gt; (B,T,V)</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> targets <span style="color:#f92672">is</span> <span style="color:#f92672">not</span> <span style="color:#66d9ef">None</span>:
+</span></span><span style="display:flex;"><span>            loss <span style="color:#f92672">=</span> logits<span style="color:#f92672">.</span>flatten(<span style="color:#ae81ff">0</span>,<span style="color:#ae81ff">1</span>)<span style="color:#f92672">.</span>sparse_categorical_crossentropy(targets<span style="color:#f92672">.</span>flatten())
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> logits, loss<span style="color:#f92672">.</span>realize()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> logits, <span style="color:#66d9ef">None</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">@staticmethod</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">build</span>(MODEL_NAME):
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        weights <span style="color:#f92672">=</span> torch_load(fetch(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#39;https://huggingface.co/</span><span style="color:#e6db74">{</span>MODEL_NAME<span style="color:#e6db74">}</span><span style="color:#e6db74">/resolve/main/pytorch_model.bin&#39;</span>))
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        transposed <span style="color:#f92672">=</span> (<span style="color:#e6db74">&#39;attn.c_attn.weight&#39;</span>, <span style="color:#e6db74">&#39;attn.c_proj.weight&#39;</span>, <span style="color:#e6db74">&#39;mlp.c_fc.weight&#39;</span>, <span style="color:#e6db74">&#39;mlp.c_proj.weight&#39;</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> k <span style="color:#f92672">in</span> weights:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> k<span style="color:#f92672">.</span>endswith(transposed):
+</span></span><span style="display:flex;"><span>                weights[k] <span style="color:#f92672">=</span> weights[k]<span style="color:#f92672">.</span>T
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        weights[<span style="color:#e6db74">&#39;lm_head.weight&#39;</span>] <span style="color:#f92672">=</span> weights[<span style="color:#e6db74">&#39;wte.weight&#39;</span>]
+</span></span><span style="display:flex;"><span>        model <span style="color:#f92672">=</span> GPT2(MODEL_CONFIGS[MODEL_NAME])
+</span></span><span style="display:flex;"><span>        load_state_dict(model, weights)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> model
+</span></span></code></pre></div><p>We&rsquo;ll load up the tiny-shakespeare dataset in classic Karpathy style.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">with</span> open(<span style="color:#e6db74">&#34;datasets/shake.txt&#34;</span>, <span style="color:#e6db74">&#34;r&#34;</span>) <span style="color:#66d9ef">as</span> f:
+</span></span><span style="display:flex;"><span>    text <span style="color:#f92672">=</span> f<span style="color:#f92672">.</span>read()
+</span></span><span style="display:flex;"><span>data <span style="color:#f92672">=</span> text[:<span style="color:#ae81ff">1000</span>]
+</span></span><span style="display:flex;"><span>encoded_data <span style="color:#f92672">=</span> enc<span style="color:#f92672">.</span>encode(data)
+</span></span><span style="display:flex;"><span>print(data[:<span style="color:#ae81ff">100</span>])
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>First Citizen:
+</span></span><span style="display:flex;"><span>Before we proceed any further, hear me speak.
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>All:
+</span></span><span style="display:flex;"><span>Speak, speak.
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>First Citizen:
+</span></span><span style="display:flex;"><span>You
+</span></span></code></pre></div><p>Obviously, we&rsquo;ll need a batched input <code>(B,T)</code>, which can be accomplished using <code>view</code>. <code>reshape</code> would do the same.</p>
+<p>For every batch <code>B</code> of text with length <code>T</code>, we need to retrieve <code>B*T+1</code>. I think this code should be self-explanatory, assuming you&rsquo;ve gotten everything up until this point.</p>
+<p>Before creating a <code>DataLoaderLite</code>, we should make sure we can overfit on a single batch.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>buf <span style="color:#f92672">=</span> Tensor(encoded_data[:<span style="color:#ae81ff">24</span><span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>])
+</span></span><span style="display:flex;"><span>batch <span style="color:#f92672">=</span> <span style="color:#66d9ef">lambda</span> x: x<span style="color:#f92672">.</span>view(<span style="color:#ae81ff">4</span>,<span style="color:#ae81ff">6</span>)
+</span></span><span style="display:flex;"><span>x <span style="color:#f92672">=</span> batch(buf[:<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>])
+</span></span><span style="display:flex;"><span>y <span style="color:#f92672">=</span> batch(buf[<span style="color:#ae81ff">1</span>:])
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>Tensor<span style="color:#f92672">.</span>training <span style="color:#f92672">=</span> <span style="color:#66d9ef">True</span>
+</span></span><span style="display:flex;"><span>Tensor<span style="color:#f92672">.</span>no_grad <span style="color:#f92672">=</span> <span style="color:#66d9ef">False</span>
+</span></span><span style="display:flex;"><span>model <span style="color:#f92672">=</span> GPT2(GPT2Small)
+</span></span><span style="display:flex;"><span>optim <span style="color:#f92672">=</span> AdamW(get_parameters(model), lr<span style="color:#f92672">=</span><span style="color:#ae81ff">3e-4</span>)
+</span></span><span style="display:flex;"><span>losses <span style="color:#f92672">=</span> []
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> i <span style="color:#f92672">in</span> (t <span style="color:#f92672">:=</span> trange(<span style="color:#ae81ff">100</span>)):
+</span></span><span style="display:flex;"><span>    optim<span style="color:#f92672">.</span>zero_grad()
+</span></span><span style="display:flex;"><span>    logits, loss <span style="color:#f92672">=</span> model(x,y)
+</span></span><span style="display:flex;"><span>    losses<span style="color:#f92672">.</span>append(loss<span style="color:#f92672">.</span>numpy())
+</span></span><span style="display:flex;"><span>    loss<span style="color:#f92672">.</span>backward()
+</span></span><span style="display:flex;"><span>    optim<span style="color:#f92672">.</span>step()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    t<span style="color:#f92672">.</span>set_description(
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;train loss: </span><span style="color:#e6db74">{</span>loss<span style="color:#f92672">.</span>numpy()<span style="color:#e6db74">:</span><span style="color:#e6db74">.2f</span><span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>    )
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>train loss: 0.02: 100%|██████████| 100/100 [00:39&lt;00:00,  2.51it/s]
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>plt<span style="color:#f92672">.</span>plot(losses)
+</span></span></code></pre></div><p><img src="/overfitting_loss.png" alt="overfitting loss curve"></p>
+<p>Now for general training.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">DataLoaderLite</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> __init__(self, B, T, file_path):
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>B<span style="color:#f92672">=</span>B
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>T<span style="color:#f92672">=</span>T
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>batch <span style="color:#f92672">=</span> <span style="color:#66d9ef">lambda</span> x: x<span style="color:#f92672">.</span>view(B,T)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">with</span> open(file_path, <span style="color:#e6db74">&#39;r&#39;</span>) <span style="color:#66d9ef">as</span> f:
+</span></span><span style="display:flex;"><span>            text <span style="color:#f92672">=</span> f<span style="color:#f92672">.</span>read()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        enc <span style="color:#f92672">=</span> tiktoken<span style="color:#f92672">.</span>get_encoding(<span style="color:#e6db74">&#39;gpt2&#39;</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        tokens <span style="color:#f92672">=</span> enc<span style="color:#f92672">.</span>encode(text)
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>tokens <span style="color:#f92672">=</span> Tensor(tokens, dtype<span style="color:#f92672">=</span>dtypes<span style="color:#f92672">.</span>long)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        print(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;loaded </span><span style="color:#e6db74">{</span>len(self<span style="color:#f92672">.</span>tokens)<span style="color:#e6db74">}</span><span style="color:#e6db74"> tokens&#34;</span>)
+</span></span><span style="display:flex;"><span>        print(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;1 epoch = </span><span style="color:#e6db74">{</span>len(self<span style="color:#f92672">.</span>tokens) <span style="color:#f92672">//</span> (B<span style="color:#f92672">*</span>T)<span style="color:#e6db74">}</span><span style="color:#e6db74"> batches&#34;</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>current_position <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">def</span> <span style="color:#a6e22e">next_batch</span>(self):
+</span></span><span style="display:flex;"><span>        B, T <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>B, self<span style="color:#f92672">.</span>T
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        buf <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>tokens[self<span style="color:#f92672">.</span>current_position:self<span style="color:#f92672">.</span>current_position <span style="color:#f92672">+</span> B<span style="color:#f92672">*</span>T<span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>]
+</span></span><span style="display:flex;"><span>        x <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>batch(buf[:<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>])
+</span></span><span style="display:flex;"><span>        y <span style="color:#f92672">=</span> self<span style="color:#f92672">.</span>batch(buf[<span style="color:#ae81ff">1</span>:])
+</span></span><span style="display:flex;"><span>        self<span style="color:#f92672">.</span>current_position <span style="color:#f92672">+=</span> B<span style="color:#f92672">*</span>T
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> self<span style="color:#f92672">.</span>current_position <span style="color:#f92672">+</span> (B<span style="color:#f92672">*</span>T<span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>) <span style="color:#f92672">&gt;</span> len(self<span style="color:#f92672">.</span>tokens):
+</span></span><span style="display:flex;"><span>            print(<span style="color:#e6db74">&#34;read entire document, resetting position...&#34;</span>)
+</span></span><span style="display:flex;"><span>            self<span style="color:#f92672">.</span>current_position <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> x,y
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>Tensor<span style="color:#f92672">.</span>training <span style="color:#f92672">=</span> <span style="color:#66d9ef">True</span>
+</span></span><span style="display:flex;"><span>Tensor<span style="color:#f92672">.</span>no_grad <span style="color:#f92672">=</span> <span style="color:#66d9ef">False</span>
+</span></span><span style="display:flex;"><span>model <span style="color:#f92672">=</span> GPT2(GPT2Small)
+</span></span><span style="display:flex;"><span>optim <span style="color:#f92672">=</span> AdamW(get_parameters(model), lr<span style="color:#f92672">=</span><span style="color:#ae81ff">3e-4</span>)
+</span></span><span style="display:flex;"><span>dl <span style="color:#f92672">=</span> DataLoaderLite(<span style="color:#ae81ff">4</span>, <span style="color:#ae81ff">32</span>, <span style="color:#e6db74">&#34;datasets/shake.txt&#34;</span>)
+</span></span><span style="display:flex;"><span>losses <span style="color:#f92672">=</span> []
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> i <span style="color:#f92672">in</span> (t <span style="color:#f92672">:=</span> trange(<span style="color:#ae81ff">100</span>)):
+</span></span><span style="display:flex;"><span>    x, y <span style="color:#f92672">=</span> dl<span style="color:#f92672">.</span>next_batch() 
+</span></span><span style="display:flex;"><span>    optim<span style="color:#f92672">.</span>zero_grad()
+</span></span><span style="display:flex;"><span>    logits, loss <span style="color:#f92672">=</span> model(x,y)
+</span></span><span style="display:flex;"><span>    losses<span style="color:#f92672">.</span>append(loss<span style="color:#f92672">.</span>numpy())
+</span></span><span style="display:flex;"><span>    loss<span style="color:#f92672">.</span>backward()
+</span></span><span style="display:flex;"><span>    optim<span style="color:#f92672">.</span>step()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    t<span style="color:#f92672">.</span>set_description(
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;train loss: </span><span style="color:#e6db74">{</span>loss<span style="color:#f92672">.</span>numpy()<span style="color:#e6db74">:</span><span style="color:#e6db74">.2f</span><span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>    )
+</span></span></code></pre></div><p><img src="/dataloaderlite_loss.png" alt="GPT2 initial dataloaderlite loss"></p>
+<p>Sweet! We now have a GPT2 model that we can run with pretrained weights and train. That&rsquo;s all for now.</p>
+
+</main>
+
+  <footer>
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex/dist/katex.min.css">
+<script src="//cdn.jsdelivr.net/combine/npm/katex/dist/katex.min.js,npm/katex/dist/contrib/auto-render.min.js,npm/@xiee/utils/js/render-katex.js"
+	defer></script>
+<script src="//cdn.jsdelivr.net/npm/@xiee/utils/js/center-img.min.js" defer></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+
+<script>
+	document.addEventListener("DOMContentLoaded", function () {
+		renderMathInElement(document.body, {
+			delimiters: [
+				{left: "$$", right: "$$", display: true},
+				{left: "\\(", right: "\\)", display: false},
+				{left: "$", right: "$", display: false}
+			]
+		});
+	});
+</script>
+
+  
+  </footer>
+  </body>
+</html>
+

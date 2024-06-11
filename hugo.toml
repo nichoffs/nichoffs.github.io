@@ -21,3 +21,4 @@ weight = 2
 
 [params]
   customCSS = ["css/custom.css"]
+
