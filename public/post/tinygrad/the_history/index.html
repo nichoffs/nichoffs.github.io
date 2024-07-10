@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Why Tiny? | Nic Hoffs Blog</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <link rel="stylesheet" href="/css/fonts.css" />
+    
+  </head>
+
+  <body>
+    <nav>
+    <ul class="menu">
+      
+      <li><a href="/">Home</a></li>
+      
+      <li><a href="/post/">Posts</a></li>
+      
+      <li><a href="/about/">About</a></li>
+      
+    </ul>
+    <hr/>
+    </nav>
+
+<div class="article-meta">
+<h1><span class="title">Why Tiny?</span></h1>
+
+<h2 class="date">2024/07/04</h2>
+</div>
+
+<main>
+<h1 id="tinyphilosophy">TinyPhilosophy</h1>
+<p>TinyGrad is a tensor automatic differentiation library created by <a href="https://en.wikipedia.org/wiki/George_Hotz">George Hotz</a> in <a href="https://www.youtube.com/watch?v=Xtws3-Pk69o&amp;list=PLzFUMGbVxlQsh0fFZ2QKOBY25lz04A3hi">2020</a>. It&rsquo;s been described (by TinyCorp) as a middleground between Anrej Karpathy&rsquo;s famous micrograd project and full-blown PyTorch. It offers both the beautiful simplicity, leanness, and ease of development of micrograd, and <em>almost</em> all the speed and functionality of PyTorch.</p>
+<p>An interesting features of TinyGrad&rsquo;s development is a continued, explicit constraint on the line count (~8000 LOC today). <em>Generally</em>, I consider this an ingenious design choice. Why generally? See below.</p>
+<p><img src="/tiny_oneliners.png" alt="heinous function"></p>
+<p>Despite the sometimes unsavoury one-liners, I support the low LOC constraint because it forces you to express the logic of the underlying concepts as concisely as possible. This means no fluff, no bloat, no boilerplate. As a result, understanding the core of TinyGrad is essentially like understanding tensor automatic differentiation itself. There&rsquo;s minimal extra abstraction between you and the fundamental concepts. The same cannot be said for PyTorch.</p>
+<p>I first realized that TinyGrad may be my deep learning library of choice when I tried to add support for the 1D convolution using FFT for Metal Performance Shaders in PyTorch. Such a task wouldn&rsquo;t just demand a solid grasp of the core principles; It would require grappling with layers of library-specific complexity. As we dive into the internals in the coming posts, you will begin to see how this is simply not an issue when developing with TinyGrad. Don&rsquo;t get me wrong. Things still get complicated, but they&rsquo;re really only complicated when <em>the subject itself is complicated</em>.</p>
+<h1 id="tinyprop">TinyProp</h1>
+<p>I think you get the point now. TinyGrad is beautifully simple. But deep learning isn&rsquo;t about beautiful, simple software, it&rsquo;s about speed and accuracy. So what is the immediate value proposition of TinyGrad? Here are some thoughts:</p>
+<ol>
+<li>API - similar to Torch, but way better in many areas</li>
+<li>Accelerator Support - much better support for non-CPU/CUDA libraries than anything else.</li>
+<li>Adding Accelerators - TinyGrad delineates frontend tensor/kernel fusion logic from backend accelerator logic with a fundamental set of 25 operations. To configure your accelerator with TinyGrad, you don&rsquo;t need to do too much more than define how these operations execute on it.</li>
+<li>Great Community - the TinyGrad discord is active and willing to help</li>
+</ol>
+<p>From <a href="tinygrad.org">tinygrad.org</a></p>
+<blockquote>
+<p>How is tinygrad faster than PyTorch?
+For most use cases it isn&rsquo;t yet, but it will be. It has three advantages:</p>
+<ol>
+<li>It compiles a custom kernel for every operation, allowing extreme shape specialization.</li>
+<li>All tensors are lazy, so it can aggressively fuse operations.</li>
+<li>The backend is 10x+ simpler, meaning optimizing one kernel makes everything fast.</li>
+</ol>
+</blockquote>
+<h1 id="tinyfuture">TinyFuture</h1>
+<p>In the words of George Hotz:</p>
+<blockquote>
+<p>We will beat pytorch at speed, API simplicity, and having less bugs. If we do that, we win.</p>
+</blockquote>
+
+</main>
+
+  <footer>
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex/dist/katex.min.css">
+<script src="//cdn.jsdelivr.net/combine/npm/katex/dist/katex.min.js,npm/katex/dist/contrib/auto-render.min.js,npm/@xiee/utils/js/render-katex.js"
+	defer></script>
+<script src="//cdn.jsdelivr.net/npm/@xiee/utils/js/center-img.min.js" defer></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+
+<script>
+	document.addEventListener("DOMContentLoaded", function () {
+		renderMathInElement(document.body, {
+			delimiters: [
+				{left: "$$", right: "$$", display: true},
+				{left: "\\(", right: "\\)", display: false},
+				{left: "$", right: "$", display: false}
+			]
+		});
+	});
+</script>
+
+  
+  </footer>
+  </body>
+</html>
+

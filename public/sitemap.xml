@@ -3,15 +3,27 @@
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>http://localhost:1313/</loc>
-    <lastmod>2024-06-11T16:25:35+02:00</lastmod>
+    <lastmod>2024-07-05T00:26:18+02:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/post/</loc>
+    <lastmod>2024-07-05T00:26:18+02:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/post/tinygrad/teenygrad/</loc>
+    <lastmod>2024-07-05T00:26:18+02:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/post/tinygrad/</loc>
+    <lastmod>2024-07-05T00:26:18+02:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/post/tinygrad/the_history/</loc>
+    <lastmod>2024-07-04T21:51:02+02:00</lastmod>
   </url><url>
     <loc>http://localhost:1313/post/mini_projects/</loc>
     <lastmod>2024-06-11T16:25:35+02:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/post/</loc>
+    <loc>http://localhost:1313/post/mini_projects/gpt2_p1/</loc>
     <lastmod>2024-06-11T16:25:35+02:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/post/mini_projects/gpt2/</loc>
+    <loc>http://localhost:1313/post/mini_projects/gpt2_p2/</loc>
     <lastmod>2024-06-11T16:25:35+02:00</lastmod>
   </url><url>
     <loc>http://localhost:1313/post/symbolic_regression/symbolic_distillation/</loc>
