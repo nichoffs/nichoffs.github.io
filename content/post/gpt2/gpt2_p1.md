@@ -1,5 +1,5 @@
 +++
-title = 'TinyGrad GPT2 à la Karpathy - Part 1'
+title = 'GPT2 à la Karpathy -- but tiny - Part 1'
 date = 2024-06-11T16:25:35+02:00
 draft = false
 +++

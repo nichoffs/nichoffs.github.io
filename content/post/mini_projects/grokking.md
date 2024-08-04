@@ -307,7 +307,7 @@ Here is the famous graph that I reproduced on my ipad very poorly.
 The exact training dynamics may be different than yours, so just know that the memorization (train loss=0) will occur
 after a couple hundred epochs, and the beginning of clean-up(when test loss starts to drop significantly) happens around 30,000.
 
-![grokking losses](/cropped.png)
+![Grokking Graph](/cropped.jpeg)
 
 You'll also notice I marked off three sections: memorization, circuit formation, and clean-up. 
 In part 2 of this series, we'll perform a deep dive analysis of the algorithm learned by the model.

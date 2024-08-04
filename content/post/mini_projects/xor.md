@@ -5,7 +5,6 @@ date: 2024-06-08
 ---
 
 The tiniest project -- teaching a neural net to XOR. 
-Obviously, I'm doing this in `tinygrad` because it's tiny.
 
 | A | B | A XOR B |
 |---|---|---------|
