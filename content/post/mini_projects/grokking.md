@@ -22,7 +22,7 @@ color = "" #color from the theme settings
 
 - **GPT** - Generatively Pre-trained Transformer - you should know how these work before reading.
 
-# What is grokking (mechanstically)?
+# What is grokking (mechanistically)?
 
 Researchers in the field of mechanistic interpretability have adopted the term "grokking" to refer to a unique training behavior observed in neural networks. Grokking describes the phenomenon of "delayed generalization," where a model initially overfits the training data, reaching zero training loss, before eventually developing a more general solution to the task that significantly reduces test loss.
 
